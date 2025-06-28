@@ -1,35 +1,58 @@
 <?php
 /**
- * WEBHOOK SHOPIFY POUR LE MIROIR DE SPYRR
- * Fichier à uploader : webhook-shopify-spyrr.php sur InfinityFree
+ * WEBHOOK SHOPIFY POUR LE MIROIR DE SPYRR - VERSION DEBUG AMÉLIORÉE
+ * Fichier à uploader : webhook-shopify-spyrr.php sur Render.com
  */
 
 // Configuration
-$webhook_secret = '9abe05879f4e2cfad967f7eb901f11f66fb1bc4500490e6064f68ce10d2e0547'; // ✅ Clé Shopify sécurisée
-$emailjs_service_id = 'service_7bfwpfm'; // ✅ Service Gmail configuré
+$webhook_secret = '9abe05879f4e2cfad967f7eb901f11f66fb1bc4500490e6064f68ce10d2e0547';
+$emailjs_service_id = 'service_7bfwpfm';
 $emailjs_template_premium = 'template_4lesgvh';
-$emailjs_template_consultation = 'template_consultation'; // À créer
+$emailjs_template_consultation = 'template_consultation';
 $emailjs_public_key = 'RRvc1ifIrhay8-fVV';
 
 /**
- * Log personnalisé
+ * Log personnalisé AMÉLIORÉ
  */
 function write_log($message) {
     $timestamp = date('Y-m-d H:i:s');
-    file_put_contents('webhook_debug.log', "[{$timestamp}] {$message}\n", FILE_APPEND);
+    $log_entry = "[{$timestamp}] {$message}\n";
+    
+    // Log dans plusieurs fichiers
+    file_put_contents('webhook_debug.log', $log_entry, FILE_APPEND);
+    file_put_contents('all_requests.log', $log_entry, FILE_APPEND);
+    
+    // Log PHP standard aussi
+    error_log("WEBHOOK SPYRR: " . $message);
 }
 
-// Template de test pour debug - AVANT la vérification sécurité
+// CAPTURE ABSOLUMENT TOUT Dès le début
+write_log("=== NOUVELLE REQUÊTE WEBHOOK ===");
+write_log("Date: " . date('Y-m-d H:i:s'));
+write_log("Méthode: " . ($_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN'));
+write_log("URL: " . ($_SERVER['REQUEST_URI'] ?? 'UNKNOWN'));
+write_log("User-Agent: " . ($_SERVER['HTTP_USER_AGENT'] ?? 'UNKNOWN'));
+write_log("Remote IP: " . ($_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN'));
+
+// Log TOUS les headers reçus
+write_log("=== HEADERS REÇUS ===");
+foreach ($_SERVER as $key => $value) {
+    if (strpos($key, 'HTTP_') === 0) {
+        write_log("Header {$key}: {$value}");
+    }
+}
+
+// Template de test pour debug
 if (isset($_GET['test'])) {
     write_log("=== TEST WEBHOOK APPELÉ ===");
-    write_log("Paramètres: " . $_SERVER['QUERY_STRING']);
+    write_log("Paramètres: " . ($_SERVER['QUERY_STRING'] ?? 'AUCUN'));
     
-    echo "<h1>🧪 Test Webhook Spyrr - VERSION MISE À JOUR</h1>";
+    echo "<h1>🧪 Test Webhook Spyrr - VERSION DEBUG</h1>";
     echo "<p>✅ Webhook configuré et opérationnel !</p>";
-    echo "<p>📡 URL : " . $_SERVER['REQUEST_URI'] . "</p>";
+    echo "<p>📡 URL : " . ($_SERVER['REQUEST_URI'] ?? '') . "</p>";
     echo "<p>🕒 Date : " . date('Y-m-d H:i:s') . "</p>";
-    echo "<p>🌐 Server : " . $_SERVER['HTTP_HOST'] . "</p>";
-    echo "<p>🔧 <strong>VERSION AVEC LOGS DÉTAILLÉS</strong></p>";
+    echo "<p>🌐 Server : " . ($_SERVER['HTTP_HOST'] ?? '') . "</p>";
+    echo "<p>🔧 <strong>VERSION AVEC LOGS HYPER DÉTAILLÉS</strong></p>";
     
     // Test génération code
     if (isset($_GET['code'])) {
@@ -38,7 +61,7 @@ if (isset($_GET['test'])) {
         echo "<p>🔑 Code test généré : <strong>{$test_code}</strong></p>";
     }
     
-    // Test EmailJS (si demandé)
+    // Test EmailJS
     if (isset($_GET['email'])) {
         echo "<p>📧 Test EmailJS en cours...</p>";
         write_log("=== DÉBUT TEST EMAILJS ===");
@@ -66,48 +89,76 @@ if (isset($_GET['test'])) {
     exit;
 }
 
-// Log pour debug
-write_log("=== WEBHOOK REÇU ===");
-write_log("Date: " . date('Y-m-d H:i:s'));
-write_log("Méthode: " . $_SERVER['REQUEST_METHOD']);
-write_log("User-Agent: " . ($_SERVER['HTTP_USER_AGENT'] ?? 'Non défini'));
-
 try {
-    // Récupération des données
+    // Log détaillé du type de requête
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        write_log("✅ REQUÊTE POST DÉTECTÉE - C'est probablement Shopify !");
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        write_log("ℹ️ REQUÊTE GET - Probablement un test navigateur");
+    } else {
+        write_log("⚠️ MÉTHODE INCONNUE: " . $_SERVER['REQUEST_METHOD']);
+    }
+
+    // Récupération des données avec capture d'erreur
     $data = file_get_contents('php://input');
-    write_log("Données reçues: " . substr($data, 0, 500)); // Premier 500 caractères
+    write_log("=== DONNÉES REÇUES ===");
+    write_log("Taille des données: " . strlen($data) . " bytes");
     
-    $webhook_signature = $_SERVER['HTTP_X_SHOPIFY_HMAC_SHA256'] ?? '';
-    write_log("Signature présente: " . ($webhook_signature ? 'OUI' : 'NON'));
-    
-    // Vérification sécurité Shopify UNIQUEMENT pour les vraies requêtes POST
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($webhook_secret) && $webhook_secret !== 'VOTRE_SHOPIFY_WEBHOOK_SECRET') {
-        $calculated_hmac = base64_encode(hash_hmac('sha256', $data, $webhook_secret, true));
-        if (!hash_equals($webhook_signature, $calculated_hmac)) {
-            http_response_code(401);
-            write_log("Webhook non autorisé - Signature invalide");
-            exit('Unauthorized - Invalid signature');
-        }
+    if (empty($data)) {
+        write_log("⚠️ AUCUNE DONNÉE REÇUE - Peut-être un test de ping Shopify");
+        write_log("Headers spéciaux: X-Shopify-Topic=" . ($_SERVER['HTTP_X_SHOPIFY_TOPIC'] ?? 'NON'));
+        write_log("Headers spéciaux: X-Shopify-Shop-Domain=" . ($_SERVER['HTTP_X_SHOPIFY_SHOP_DOMAIN'] ?? 'NON'));
+        
+        // Répondre OK même sans données pour les tests Shopify
+        http_response_code(200);
+        echo "OK - Webhook test reçu - Pas de données à traiter";
+        write_log("✅ Réponse OK envoyée pour test sans données");
+        exit;
     }
     
-    // Si pas de données POST, c'est probablement un test
-    if (empty($data)) {
-        write_log("Pas de données POST - Test direct");
-        echo "Webhook Spyrr opérationnel - En attente de données Shopify";
-        exit;
+    // Log des premières données pour debug
+    write_log("Début des données: " . substr($data, 0, 200) . "...");
+    
+    // Vérification signature Shopify
+    $webhook_signature = $_SERVER['HTTP_X_SHOPIFY_HMAC_SHA256'] ?? '';
+    write_log("Signature Shopify présente: " . ($webhook_signature ? 'OUI' : 'NON'));
+    
+    if ($webhook_signature) {
+        write_log("Signature reçue: " . substr($webhook_signature, 0, 20) . "...");
+    }
+    
+    // Vérification sécurité UNIQUEMENT pour les vraies requêtes avec signature
+    if (!empty($webhook_signature) && !empty($webhook_secret) && $webhook_secret !== 'VOTRE_SHOPIFY_WEBHOOK_SECRET') {
+        $calculated_hmac = base64_encode(hash_hmac('sha256', $data, $webhook_secret, true));
+        write_log("Signature calculée: " . substr($calculated_hmac, 0, 20) . "...");
+        
+        if (!hash_equals($webhook_signature, $calculated_hmac)) {
+            http_response_code(401);
+            write_log("❌ SIGNATURE INVALIDE - Webhook non autorisé");
+            exit('Unauthorized - Invalid signature');
+        } else {
+            write_log("✅ SIGNATURE VALIDE - Webhook Shopify authentifié");
+        }
+    } else {
+        write_log("ℹ️ Pas de vérification de signature (test ou signature manquante)");
     }
     
     // Parsing commande
     $order = json_decode($data, true);
     if (!$order) {
-        throw new Exception("Impossible de parser la commande");
+        write_log("❌ ERREUR: Impossible de parser JSON");
+        write_log("Données brutes: " . $data);
+        throw new Exception("Impossible de parser la commande JSON");
     }
     
-    // Informations client
-    $email_client = $order['email'] ?? '';
-    $nom_client = ($order['billing_address']['first_name'] ?? '') . ' ' . ($order['billing_address']['last_name'] ?? '');
-    $order_id = $order['id'] ?? '';
-    $order_number = $order['order_number'] ?? '';
+    write_log("✅ JSON parsé avec succès");
+    
+    // Informations client avec protection contre les valeurs manquantes
+    $email_client = $order['email'] ?? 'EMAIL_MANQUANT';
+    $billing_address = $order['billing_address'] ?? [];
+    $nom_client = ($billing_address['first_name'] ?? '') . ' ' . ($billing_address['last_name'] ?? '');
+    $order_id = $order['id'] ?? 'ID_MANQUANT';
+    $order_number = $order['order_number'] ?? 'NUMBER_MANQUANT';
     
     write_log("=== COMMANDE ANALYSÉE ===");
     write_log("Email: {$email_client}");
@@ -124,30 +175,69 @@ try {
         write_log("Nombre de produits: " . count($order['line_items']));
         
         foreach ($order['line_items'] as $index => $item) {
-            $product_title = $item['title'] ?? '';
+            $product_title = $item['title'] ?? 'TITRE_MANQUANT';
             $product_handle = $item['variant_title'] ?? '';
             
             write_log("Produit {$index}: {$product_title}");
             
-            // Détection produit Premium (plusieurs méthodes)
-            if (strpos($product_title, 'oracle-le-miroir-de-spyrr-acces-premium') !== false ||
-                strpos($product_title, 'Oracle Le Miroir de Spyrr - Accès Premium') !== false ||
-                strpos($product_title, 'Accès Premium') !== false ||
-                strpos($product_title, 'Premium') !== false) {
+            // Détection produit Premium - OPTIMISÉE POUR VOTRE PRODUIT EXACT
+            $product_lower = strtolower($product_title);
+            $product_id = $item['product_id'] ?? '';
+            
+            // LOG de debug détaillé
+            write_log("=== ANALYSE PRODUIT ===");
+            write_log("Titre original: '{$product_title}'");
+            write_log("Titre lowercase: '{$product_lower}'");
+            write_log("Product ID: '{$product_id}'");
+            
+            // Méthodes de détection premium (ordre de priorité)
+            $is_premium = false;
+            $detection_method = '';
+            
+            // 1. Détection par ID exact (le plus précis)
+            if ($product_id == '15073025196380') {
+                $is_premium = true;
+                $detection_method = 'ID exact';
+            }
+            // 2. Détection par titre exact
+            elseif (strpos($product_lower, 'oracle') !== false && 
+                    strpos($product_lower, 'miroir de spyrr') !== false && 
+                    strpos($product_lower, 'acces premium') !== false) {
+                $is_premium = true;
+                $detection_method = 'Titre exact complet';
+            }
+            // 3. Détection par mots-clés critiques
+            elseif (strpos($product_lower, 'oracle') !== false && strpos($product_lower, 'spyrr') !== false) {
+                $is_premium = true;
+                $detection_method = 'Oracle + Spyrr';
+            }
+            // 4. Détection large pour autres produits premium
+            elseif (strpos($product_lower, 'premium') !== false ||
+                    strpos($product_lower, 'accès') !== false ||
+                    strpos($product_lower, 'acces') !== false) {
+                $is_premium = true;
+                $detection_method = 'Mots-clés premium';
+            }
+            
+            // LOG du résultat
+            write_log("RÉSULTAT: Premium = " . ($is_premium ? 'OUI' : 'NON') . " (Méthode: {$detection_method})");
+            
+            if ($is_premium) {
                 $has_premium = true;
-                write_log("✅ PRODUIT PREMIUM DÉTECTÉ : " . $product_title);
+                write_log("✅ PRODUIT PREMIUM DÉTECTÉ : " . $product_title . " (via {$detection_method})");
+            } else {
+                write_log("❌ Produit non premium : " . $product_title);
             }
             
             // Détection consultation privée
-            if (strpos($product_title, 'consultation-prive-oracle-miroir-de-spyrr') !== false ||
-                strpos($product_title, 'Consultation Privé Oracle Miroir de Spyrr') !== false ||
-                strpos($product_title, 'Consultation') !== false) {
+            if (strpos(strtolower($product_title), 'consultation') !== false) {
                 $has_consultation = true;
                 write_log("✅ CONSULTATION DÉTECTÉE : " . $product_title);
             }
         }
     } else {
         write_log("❌ Aucun line_items trouvé dans la commande");
+        write_log("Structure commande: " . print_r(array_keys($order), true));
     }
     
     write_log("=== RÉSULTAT DÉTECTION ===");
@@ -160,7 +250,7 @@ try {
         $code_premium = generate_premium_code();
         write_log("Code généré: {$code_premium}");
         
-        // Sauvegarde du code (optionnel)
+        // Sauvegarde du code
         save_premium_code($code_premium, $email_client, $order_id);
         
         // Envoi email code premium
@@ -175,21 +265,23 @@ try {
     // Traitement Consultation
     if ($has_consultation) {
         write_log("=== TRAITEMENT CONSULTATION ===");
-        // Envoi email consultation
         send_consultation_email($email_client, $nom_client, $order_number);
-        
         write_log("✅ EMAIL CONSULTATION ENVOYÉ à {$email_client}");
     }
     
     // Réponse succès
     http_response_code(200);
-    echo "OK - Commande traitée";
+    echo "OK - Commande traitée avec succès";
+    write_log("✅ TRAITEMENT TERMINÉ - Réponse OK envoyée");
     
 } catch (Exception $e) {
-    write_log("Erreur webhook : " . $e->getMessage());
+    write_log("❌ ERREUR CRITIQUE : " . $e->getMessage());
+    write_log("Stack trace: " . $e->getTraceAsString());
     http_response_code(500);
     echo "Erreur : " . $e->getMessage();
 }
+
+write_log("=== FIN TRAITEMENT WEBHOOK ===\n");
 
 /**
  * Génération code premium unique
@@ -217,17 +309,13 @@ function test_emailjs() {
         ]
     ];
     
-    echo "<p>🔧 Données envoyées : " . json_encode($test_data) . "</p>";
-    
-    // Test avec plus de détails
     return send_emailjs($test_data, true);
 }
 
 /**
- * Sauvegarde code en base (optionnel)
+ * Sauvegarde code en base
  */
 function save_premium_code($code, $email, $order_id) {
-    // Alternative : sauvegarde dans fichier
     $data = [
         'code' => $code,
         'email' => $email,
@@ -235,6 +323,7 @@ function save_premium_code($code, $email, $order_id) {
         'date' => date('Y-m-d H:i:s')
     ];
     file_put_contents('premium_codes.log', json_encode($data) . "\n", FILE_APPEND);
+    write_log("Code sauvegardé: " . json_encode($data));
 }
 
 /**
@@ -268,7 +357,7 @@ function send_consultation_email($email, $nom, $order_number) {
     
     $emailjs_data = [
         'service_id' => $emailjs_service_id,
-        'template_id' => 'template_consultation', // À créer sur EmailJS
+        'template_id' => 'template_consultation',
         'user_id' => $emailjs_public_key,
         'template_params' => [
             'to_email' => $email,
@@ -286,52 +375,26 @@ function send_consultation_email($email, $nom, $order_number) {
  * Fonction commune envoi EmailJS
  */
 function send_emailjs($data, $test_mode = false) {
-    if ($test_mode) {
-        echo "<p>🚀 Test EmailJS démarré...</p>";
-        echo "<p>📡 URL API : https://api.emailjs.com/api/v1.0/email/send</p>";
-        write_log("=== DÉBUT ENVOI EMAILJS (TEST MODE) ===");
-    }
-    
     $ch = curl_init('https://api.emailjs.com/api/v1.0/email/send');
     curl_setopt($ch, CURLOPT_POST, 1);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'Content-Type: application/json',
-        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept: application/json, text/plain, */*',
-        'Accept-Language: en-US,en;q=0.9',
-        'Accept-Encoding: gzip, deflate, br',
-        'Origin: https://www.spyrr.net',
-        'Referer: https://www.spyrr.net/',
-        'Sec-Ch-Ua: "Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'Sec-Ch-Ua-Mobile: ?0',
-        'Sec-Ch-Ua-Platform: "Windows"',
-        'Sec-Fetch-Dest: empty',
-        'Sec-Fetch-Mode: cors',
-        'Sec-Fetch-Site: cross-site'
+        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     ]);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_ENCODING, 'gzip, deflate, br');
     
     $result = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curl_error = curl_error($ch);
     curl_close($ch);
     
-    write_log("EmailJS Response - HTTP: {$http_code}, Result: {$result}");
+    write_log("EmailJS Response - HTTP: {$http_code}, Result: " . substr($result, 0, 100));
     if ($curl_error) {
         write_log("EmailJS CURL Error: {$curl_error}");
-    }
-    
-    if ($test_mode) {
-        echo "<p>📊 Code HTTP : {$http_code}</p>";
-        echo "<p>📝 Réponse API : {$result}</p>";
-        if ($curl_error) {
-            echo "<p>❌ Erreur CURL : {$curl_error}</p>";
-        }
     }
     
     if ($http_code !== 200) {
@@ -343,16 +406,11 @@ function send_emailjs($data, $test_mode = false) {
         if (!$test_mode) {
             throw new Exception($error_msg);
         } else {
-            echo "<p>❌ ÉCHEC : {$error_msg}</p>";
             return false;
         }
     }
     
-    if ($test_mode) {
-        echo "<p>✅ SUCCÈS : Email envoyé !</p>";
-    }
     write_log("✅ EmailJS SUCCESS");
-    
     return $result;
 }
 ?>
