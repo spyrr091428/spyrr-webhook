@@ -372,20 +372,40 @@ function send_consultation_email($email, $nom, $order_number) {
 }
 
 /**
- * Fonction commune envoi EmailJS
+ * Fonction commune envoi EmailJS - VERSION ANTI-DÉTECTION
  */
 function send_emailjs($data, $test_mode = false) {
+    // Headers ultra-réalistes pour contourner la détection
+    $headers = [
+        'Content-Type: application/json',
+        'Accept: application/json, text/plain, */*',
+        'Accept-Language: fr-FR,fr;q=0.9,en;q=0.8',
+        'Accept-Encoding: gzip, deflate, br',
+        'Cache-Control: no-cache',
+        'Pragma: no-cache',
+        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Origin: https://www.spyrr.net',
+        'Referer: https://www.spyrr.net/TIRAGE_GRATUIT_3_CARTES.i.htm',
+        'Sec-Ch-Ua: "Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile: ?0',
+        'Sec-Ch-Ua-Platform: "Windows"',
+        'Sec-Fetch-Dest: empty',
+        'Sec-Fetch-Mode: cors',
+        'Sec-Fetch-Site: cross-site',
+        'X-Requested-With: XMLHttpRequest'
+    ];
+    
     $ch = curl_init('https://api.emailjs.com/api/v1.0/email/send');
     curl_setopt($ch, CURLOPT_POST, 1);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/json',
-        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    ]);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_ENCODING, 'gzip, deflate, br');
+    curl_setopt($ch, CURLOPT_COOKIEJAR, '/tmp/emailjs_cookies.txt');
+    curl_setopt($ch, CURLOPT_COOKIEFILE, '/tmp/emailjs_cookies.txt');
     
     $result = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
