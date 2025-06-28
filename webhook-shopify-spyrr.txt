@@ -1,0 +1,358 @@
+<?php
+/**
+ * WEBHOOK SHOPIFY POUR LE MIROIR DE SPYRR
+ * Fichier à uploader : webhook-shopify-spyrr.php sur InfinityFree
+ */
+
+// Configuration
+$webhook_secret = '9abe05879f4e2cfad967f7eb901f11f66fb1bc4500490e6064f68ce10d2e0547'; // ✅ Clé Shopify sécurisée
+$emailjs_service_id = 'service_7bfwpfm'; // ✅ Service Gmail configuré
+$emailjs_template_premium = 'template_4lesgvh';
+$emailjs_template_consultation = 'template_consultation'; // À créer
+$emailjs_public_key = 'RRvc1ifIrhay8-fVV';
+
+/**
+ * Log personnalisé
+ */
+function write_log($message) {
+    $timestamp = date('Y-m-d H:i:s');
+    file_put_contents('webhook_debug.log', "[{$timestamp}] {$message}\n", FILE_APPEND);
+}
+
+// Template de test pour debug - AVANT la vérification sécurité
+if (isset($_GET['test'])) {
+    write_log("=== TEST WEBHOOK APPELÉ ===");
+    write_log("Paramètres: " . $_SERVER['QUERY_STRING']);
+    
+    echo "<h1>🧪 Test Webhook Spyrr - VERSION MISE À JOUR</h1>";
+    echo "<p>✅ Webhook configuré et opérationnel !</p>";
+    echo "<p>📡 URL : " . $_SERVER['REQUEST_URI'] . "</p>";
+    echo "<p>🕒 Date : " . date('Y-m-d H:i:s') . "</p>";
+    echo "<p>🌐 Server : " . $_SERVER['HTTP_HOST'] . "</p>";
+    echo "<p>🔧 <strong>VERSION AVEC LOGS DÉTAILLÉS</strong></p>";
+    
+    // Test génération code
+    if (isset($_GET['code'])) {
+        $test_code = generate_premium_code();
+        write_log("Code test généré: {$test_code}");
+        echo "<p>🔑 Code test généré : <strong>{$test_code}</strong></p>";
+    }
+    
+    // Test EmailJS (si demandé)
+    if (isset($_GET['email'])) {
+        echo "<p>📧 Test EmailJS en cours...</p>";
+        write_log("=== DÉBUT TEST EMAILJS ===");
+        try {
+            $result = test_emailjs();
+            if ($result !== false) {
+                echo "<p><strong>✅ Test EmailJS : SUCCESS</strong></p>";
+                write_log("✅ Test EmailJS réussi");
+            }
+        } catch (Exception $e) {
+            echo "<p><strong>❌ Test EmailJS : ERREUR</strong> - " . $e->getMessage() . "</p>";
+            write_log("❌ Test EmailJS échoué: " . $e->getMessage());
+        }
+    }
+    
+    echo "<hr>";
+    echo "<p>🔗 Tests disponibles :</p>";
+    echo "<ul>";
+    echo "<li><a href='?test=1&code=1'>Test génération code</a></li>";
+    echo "<li><a href='?test=1&email=1'>Test EmailJS</a></li>";
+    echo "<li><a href='voir-logs.php'>📊 Voir logs détaillés</a></li>";
+    echo "</ul>";
+    
+    write_log("=== FIN TEST WEBHOOK ===");
+    exit;
+}
+
+// Log pour debug
+write_log("=== WEBHOOK REÇU ===");
+write_log("Date: " . date('Y-m-d H:i:s'));
+write_log("Méthode: " . $_SERVER['REQUEST_METHOD']);
+write_log("User-Agent: " . ($_SERVER['HTTP_USER_AGENT'] ?? 'Non défini'));
+
+try {
+    // Récupération des données
+    $data = file_get_contents('php://input');
+    write_log("Données reçues: " . substr($data, 0, 500)); // Premier 500 caractères
+    
+    $webhook_signature = $_SERVER['HTTP_X_SHOPIFY_HMAC_SHA256'] ?? '';
+    write_log("Signature présente: " . ($webhook_signature ? 'OUI' : 'NON'));
+    
+    // Vérification sécurité Shopify UNIQUEMENT pour les vraies requêtes POST
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($webhook_secret) && $webhook_secret !== 'VOTRE_SHOPIFY_WEBHOOK_SECRET') {
+        $calculated_hmac = base64_encode(hash_hmac('sha256', $data, $webhook_secret, true));
+        if (!hash_equals($webhook_signature, $calculated_hmac)) {
+            http_response_code(401);
+            write_log("Webhook non autorisé - Signature invalide");
+            exit('Unauthorized - Invalid signature');
+        }
+    }
+    
+    // Si pas de données POST, c'est probablement un test
+    if (empty($data)) {
+        write_log("Pas de données POST - Test direct");
+        echo "Webhook Spyrr opérationnel - En attente de données Shopify";
+        exit;
+    }
+    
+    // Parsing commande
+    $order = json_decode($data, true);
+    if (!$order) {
+        throw new Exception("Impossible de parser la commande");
+    }
+    
+    // Informations client
+    $email_client = $order['email'] ?? '';
+    $nom_client = ($order['billing_address']['first_name'] ?? '') . ' ' . ($order['billing_address']['last_name'] ?? '');
+    $order_id = $order['id'] ?? '';
+    $order_number = $order['order_number'] ?? '';
+    
+    write_log("=== COMMANDE ANALYSÉE ===");
+    write_log("Email: {$email_client}");
+    write_log("Nom: {$nom_client}");
+    write_log("Order ID: {$order_id}");
+    write_log("Order Number: {$order_number}");
+    
+    // Vérification des produits achetés
+    $has_premium = false;
+    $has_consultation = false;
+    
+    write_log("=== ANALYSE PRODUITS ===");
+    if (isset($order['line_items']) && is_array($order['line_items'])) {
+        write_log("Nombre de produits: " . count($order['line_items']));
+        
+        foreach ($order['line_items'] as $index => $item) {
+            $product_title = $item['title'] ?? '';
+            $product_handle = $item['variant_title'] ?? '';
+            
+            write_log("Produit {$index}: {$product_title}");
+            
+            // Détection produit Premium (plusieurs méthodes)
+            if (strpos($product_title, 'oracle-le-miroir-de-spyrr-acces-premium') !== false ||
+                strpos($product_title, 'Oracle Le Miroir de Spyrr - Accès Premium') !== false ||
+                strpos($product_title, 'Accès Premium') !== false ||
+                strpos($product_title, 'Premium') !== false) {
+                $has_premium = true;
+                write_log("✅ PRODUIT PREMIUM DÉTECTÉ : " . $product_title);
+            }
+            
+            // Détection consultation privée
+            if (strpos($product_title, 'consultation-prive-oracle-miroir-de-spyrr') !== false ||
+                strpos($product_title, 'Consultation Privé Oracle Miroir de Spyrr') !== false ||
+                strpos($product_title, 'Consultation') !== false) {
+                $has_consultation = true;
+                write_log("✅ CONSULTATION DÉTECTÉE : " . $product_title);
+            }
+        }
+    } else {
+        write_log("❌ Aucun line_items trouvé dans la commande");
+    }
+    
+    write_log("=== RÉSULTAT DÉTECTION ===");
+    write_log("Premium détecté: " . ($has_premium ? 'OUI' : 'NON'));
+    write_log("Consultation détectée: " . ($has_consultation ? 'OUI' : 'NON'));
+    
+    // Traitement Accès Premium
+    if ($has_premium) {
+        write_log("=== TRAITEMENT PREMIUM ===");
+        $code_premium = generate_premium_code();
+        write_log("Code généré: {$code_premium}");
+        
+        // Sauvegarde du code (optionnel)
+        save_premium_code($code_premium, $email_client, $order_id);
+        
+        // Envoi email code premium
+        write_log("Envoi email à: {$email_client}");
+        send_premium_email($email_client, $nom_client, $code_premium, $order_number);
+        
+        write_log("✅ EMAIL PREMIUM ENVOYÉ : {$code_premium} à {$email_client}");
+    } else {
+        write_log("❌ Aucun produit premium détecté - pas d'email envoyé");
+    }
+    
+    // Traitement Consultation
+    if ($has_consultation) {
+        write_log("=== TRAITEMENT CONSULTATION ===");
+        // Envoi email consultation
+        send_consultation_email($email_client, $nom_client, $order_number);
+        
+        write_log("✅ EMAIL CONSULTATION ENVOYÉ à {$email_client}");
+    }
+    
+    // Réponse succès
+    http_response_code(200);
+    echo "OK - Commande traitée";
+    
+} catch (Exception $e) {
+    write_log("Erreur webhook : " . $e->getMessage());
+    http_response_code(500);
+    echo "Erreur : " . $e->getMessage();
+}
+
+/**
+ * Génération code premium unique
+ */
+function generate_premium_code() {
+    $year = date('Y');
+    $random = strtoupper(substr(md5(uniqid(rand(), true)), 0, 8));
+    return "SPYRR{$year}_{$random}";
+}
+
+/**
+ * Test EmailJS
+ */
+function test_emailjs() {
+    $test_data = [
+        'service_id' => 'service_7bfwpfm',
+        'template_id' => 'template_4lesgvh',
+        'user_id' => 'RRvc1ifIrhay8-fVV',
+        'template_params' => [
+            'to_email' => 'ludovicspyrr@gmail.com',
+            'to_name' => 'Test User',
+            'premium_code' => 'SPYRR2025_TEST123',
+            'order_number' => 'TEST_ORDER',
+            'site_url' => 'https://www.spyrr.net/TIRAGE_GRATUIT_3_CARTES.i.htm'
+        ]
+    ];
+    
+    echo "<p>🔧 Données envoyées : " . json_encode($test_data) . "</p>";
+    
+    // Test avec plus de détails
+    return send_emailjs($test_data, true);
+}
+
+/**
+ * Sauvegarde code en base (optionnel)
+ */
+function save_premium_code($code, $email, $order_id) {
+    // Alternative : sauvegarde dans fichier
+    $data = [
+        'code' => $code,
+        'email' => $email,
+        'order_id' => $order_id,
+        'date' => date('Y-m-d H:i:s')
+    ];
+    file_put_contents('premium_codes.log', json_encode($data) . "\n", FILE_APPEND);
+}
+
+/**
+ * Envoi email code premium via EmailJS
+ */
+function send_premium_email($email, $nom, $code, $order_number) {
+    global $emailjs_service_id, $emailjs_template_premium, $emailjs_public_key;
+    
+    $emailjs_data = [
+        'service_id' => $emailjs_service_id,
+        'template_id' => $emailjs_template_premium,
+        'user_id' => $emailjs_public_key,
+        'template_params' => [
+            'to_email' => $email,
+            'to_name' => $nom,
+            'premium_code' => $code,
+            'order_number' => $order_number,
+            'site_url' => 'https://www.spyrr.net/TIRAGE_GRATUIT_3_CARTES.i.htm',
+            'instructions' => "1. Cliquez sur 'Inscription'\n2. Saisissez votre code : {$code}\n3. Utilisez votre email : {$email}\n4. Choisissez un mot de passe\n5. Connectez-vous et profitez des 5 tirages premium !"
+        ]
+    ];
+    
+    send_emailjs($emailjs_data);
+}
+
+/**
+ * Envoi email consultation via EmailJS
+ */
+function send_consultation_email($email, $nom, $order_number) {
+    global $emailjs_service_id, $emailjs_public_key;
+    
+    $emailjs_data = [
+        'service_id' => $emailjs_service_id,
+        'template_id' => 'template_consultation', // À créer sur EmailJS
+        'user_id' => $emailjs_public_key,
+        'template_params' => [
+            'to_email' => $email,
+            'to_name' => $nom,
+            'order_number' => $order_number,
+            'contact_email' => 'spyrr@proton.me',
+            'contact_url' => 'https://www.spyrr.net/CONTACT.K.htm'
+        ]
+    ];
+    
+    send_emailjs($emailjs_data);
+}
+
+/**
+ * Fonction commune envoi EmailJS
+ */
+function send_emailjs($data, $test_mode = false) {
+    if ($test_mode) {
+        echo "<p>🚀 Test EmailJS démarré...</p>";
+        echo "<p>📡 URL API : https://api.emailjs.com/api/v1.0/email/send</p>";
+        write_log("=== DÉBUT ENVOI EMAILJS (TEST MODE) ===");
+    }
+    
+    $ch = curl_init('https://api.emailjs.com/api/v1.0/email/send');
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept: application/json, text/plain, */*',
+        'Accept-Language: en-US,en;q=0.9',
+        'Accept-Encoding: gzip, deflate, br',
+        'Origin: https://www.spyrr.net',
+        'Referer: https://www.spyrr.net/',
+        'Sec-Ch-Ua: "Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile: ?0',
+        'Sec-Ch-Ua-Platform: "Windows"',
+        'Sec-Fetch-Dest: empty',
+        'Sec-Fetch-Mode: cors',
+        'Sec-Fetch-Site: cross-site'
+    ]);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_ENCODING, 'gzip, deflate, br');
+    
+    $result = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_error = curl_error($ch);
+    curl_close($ch);
+    
+    write_log("EmailJS Response - HTTP: {$http_code}, Result: {$result}");
+    if ($curl_error) {
+        write_log("EmailJS CURL Error: {$curl_error}");
+    }
+    
+    if ($test_mode) {
+        echo "<p>📊 Code HTTP : {$http_code}</p>";
+        echo "<p>📝 Réponse API : {$result}</p>";
+        if ($curl_error) {
+            echo "<p>❌ Erreur CURL : {$curl_error}</p>";
+        }
+    }
+    
+    if ($http_code !== 200) {
+        $error_msg = "Erreur envoi email : HTTP {$http_code} - {$result}";
+        if ($curl_error) {
+            $error_msg .= " - CURL: {$curl_error}";
+        }
+        write_log("❌ ÉCHEC EMAILJS: {$error_msg}");
+        if (!$test_mode) {
+            throw new Exception($error_msg);
+        } else {
+            echo "<p>❌ ÉCHEC : {$error_msg}</p>";
+            return false;
+        }
+    }
+    
+    if ($test_mode) {
+        echo "<p>✅ SUCCÈS : Email envoyé !</p>";
+    }
+    write_log("✅ EmailJS SUCCESS");
+    
+    return $result;
+}
+?>
