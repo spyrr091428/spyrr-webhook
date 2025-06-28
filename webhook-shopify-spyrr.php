@@ -1,7 +1,8 @@
 <?php
 /**
- * WEBHOOK SHOPIFY POUR LE MIROIR DE SPYRR - VERSION DEBUG AMÉLIORÉE
+ * WEBHOOK SHOPIFY POUR LE MIROIR DE SPYRR - VERSION FINALE CORRIGÉE
  * Fichier à uploader : webhook-shopify-spyrr.php sur Render.com
+ * CORRECTIONS : Anti-doublons + validation codes premium
  */
 
 // Configuration
@@ -47,12 +48,12 @@ if (isset($_GET['test'])) {
     write_log("=== TEST WEBHOOK APPELÉ ===");
     write_log("Paramètres: " . ($_SERVER['QUERY_STRING'] ?? 'AUCUN'));
     
-    echo "<h1>🧪 Test Webhook Spyrr - VERSION DEBUG</h1>";
+    echo "<h1>🧪 Test Webhook Spyrr - VERSION FINALE CORRIGÉE</h1>";
     echo "<p>✅ Webhook configuré et opérationnel !</p>";
     echo "<p>📡 URL : " . ($_SERVER['REQUEST_URI'] ?? '') . "</p>";
     echo "<p>🕒 Date : " . date('Y-m-d H:i:s') . "</p>";
     echo "<p>🌐 Server : " . ($_SERVER['HTTP_HOST'] ?? '') . "</p>";
-    echo "<p>🔧 <strong>VERSION AVEC LOGS HYPER DÉTAILLÉS</strong></p>";
+    echo "<p>🔧 <strong>VERSION AVEC ANTI-DOUBLONS ET VALIDATION CODES</strong></p>";
     
     // Test génération code
     if (isset($_GET['code'])) {
@@ -166,6 +167,52 @@ try {
     write_log("Order ID: {$order_id}");
     write_log("Order Number: {$order_number}");
     
+    // NOUVELLE GESTION ANTI-DOUBLONS
+    write_log("=== VÉRIFICATION ANTI-DOUBLONS ===");
+    
+    // Créer un identifiant unique pour cette commande
+    $order_unique_id = $order_id . '_' . $email_client;
+    $processed_file = 'processed_orders.txt';
+    
+    // Vérifier si cette commande a déjà été traitée dans les 10 dernières minutes
+    $current_time = time();
+    $processed_orders = [];
+    if (file_exists($processed_file)) {
+        $lines = file($processed_file, FILE_IGNORE_NEW_LINES);
+        foreach ($lines as $line) {
+            if (trim($line)) {
+                $parts = explode('|', $line);
+                if (count($parts) >= 2) {
+                    $stored_id = $parts[0];
+                    $stored_time = intval($parts[1]);
+                    
+                    // Garder seulement les entrées des 10 dernières minutes
+                    if (($current_time - $stored_time) < 600) {
+                        $processed_orders[] = $stored_id;
+                    }
+                }
+            }
+        }
+        
+        // Réécrire le fichier avec seulement les entrées récentes
+        $new_content = '';
+        foreach ($processed_orders as $stored_id) {
+            $new_content .= $stored_id . '|' . $current_time . "\n";
+        }
+        file_put_contents($processed_file, $new_content);
+    }
+    
+    if (in_array($order_unique_id, $processed_orders)) {
+        write_log("⚠️ COMMANDE DÉJÀ TRAITÉE : {$order_unique_id} - Éviter le doublon");
+        http_response_code(200);
+        echo "OK - Commande déjà traitée (anti-doublon)";
+        exit;
+    }
+    
+    // Marquer la commande comme en cours de traitement
+    file_put_contents($processed_file, $order_unique_id . '|' . $current_time . "\n", FILE_APPEND);
+    write_log("✅ Commande marquée comme en traitement : {$order_unique_id}");
+    
     // Vérification des produits achetés
     $has_premium = false;
     $has_consultation = false;
@@ -177,17 +224,11 @@ try {
         foreach ($order['line_items'] as $index => $item) {
             $product_title = $item['title'] ?? 'TITRE_MANQUANT';
             $product_handle = $item['variant_title'] ?? '';
-            
-            write_log("Produit {$index}: {$product_title}");
-            
-            // Détection produit Premium - OPTIMISÉE POUR VOTRE PRODUIT EXACT
-            $product_lower = strtolower($product_title);
             $product_id = $item['product_id'] ?? '';
             
-            // LOG de debug détaillé
             write_log("=== ANALYSE PRODUIT ===");
             write_log("Titre original: '{$product_title}'");
-            write_log("Titre lowercase: '{$product_lower}'");
+            write_log("Titre lowercase: '" . strtolower($product_title) . "'");
             write_log("Product ID: '{$product_id}'");
             
             // Méthodes de détection premium (ordre de priorité)
@@ -200,21 +241,21 @@ try {
                 $detection_method = 'ID exact';
             }
             // 2. Détection par titre exact
-            elseif (strpos($product_lower, 'oracle') !== false && 
-                    strpos($product_lower, 'miroir de spyrr') !== false && 
-                    strpos($product_lower, 'acces premium') !== false) {
+            elseif (strpos(strtolower($product_title), 'oracle') !== false && 
+                    strpos(strtolower($product_title), 'miroir de spyrr') !== false && 
+                    strpos(strtolower($product_title), 'acces premium') !== false) {
                 $is_premium = true;
                 $detection_method = 'Titre exact complet';
             }
             // 3. Détection par mots-clés critiques
-            elseif (strpos($product_lower, 'oracle') !== false && strpos($product_lower, 'spyrr') !== false) {
+            elseif (strpos(strtolower($product_title), 'oracle') !== false && strpos(strtolower($product_title), 'spyrr') !== false) {
                 $is_premium = true;
                 $detection_method = 'Oracle + Spyrr';
             }
             // 4. Détection large pour autres produits premium
-            elseif (strpos($product_lower, 'premium') !== false ||
-                    strpos($product_lower, 'accès') !== false ||
-                    strpos($product_lower, 'acces') !== false) {
+            elseif (strpos(strtolower($product_title), 'premium') !== false ||
+                    strpos(strtolower($product_title), 'accès') !== false ||
+                    strpos(strtolower($product_title), 'acces') !== false) {
                 $is_premium = true;
                 $detection_method = 'Mots-clés premium';
             }
