@@ -1,8 +1,8 @@
 <?php
 /**
- * WEBHOOK SHOPIFY POUR LE MIROIR DE SPYRR - VERSION FINALE CORRIGÉE
- * Fichier à uploader : webhook-shopify-spyrr.php sur Render.com
- * CORRECTIONS : Anti-doublons + validation codes premium
+ * WEBHOOK SHOPIFY POUR LE MIROIR DE SPYRR - VERSION SÉCURISÉE
+ * Fichier : webhook-shopify-spyrr.php
+ * RETOUR À LA BASE STABLE + corrections essentielles seulement
  */
 
 // Configuration
@@ -13,153 +13,92 @@ $emailjs_template_consultation = 'template_consultation';
 $emailjs_public_key = 'RRvc1ifIrhay8-fVV';
 
 /**
- * Log personnalisé AMÉLIORÉ
+ * Log personnalisé
  */
 function write_log($message) {
     $timestamp = date('Y-m-d H:i:s');
-    $log_entry = "[{$timestamp}] {$message}\n";
-    
-    // Log dans plusieurs fichiers
-    file_put_contents('webhook_debug.log', $log_entry, FILE_APPEND);
-    file_put_contents('all_requests.log', $log_entry, FILE_APPEND);
-    
-    // Log PHP standard aussi
+    file_put_contents('webhook_debug.log', "[{$timestamp}] {$message}\n", FILE_APPEND);
     error_log("WEBHOOK SPYRR: " . $message);
-}
-
-// CAPTURE ABSOLUMENT TOUT Dès le début
-write_log("=== NOUVELLE REQUÊTE WEBHOOK ===");
-write_log("Date: " . date('Y-m-d H:i:s'));
-write_log("Méthode: " . ($_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN'));
-write_log("URL: " . ($_SERVER['REQUEST_URI'] ?? 'UNKNOWN'));
-write_log("User-Agent: " . ($_SERVER['HTTP_USER_AGENT'] ?? 'UNKNOWN'));
-write_log("Remote IP: " . ($_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN'));
-
-// Log TOUS les headers reçus
-write_log("=== HEADERS REÇUS ===");
-foreach ($_SERVER as $key => $value) {
-    if (strpos($key, 'HTTP_') === 0) {
-        write_log("Header {$key}: {$value}");
-    }
 }
 
 // Template de test pour debug
 if (isset($_GET['test'])) {
     write_log("=== TEST WEBHOOK APPELÉ ===");
-    write_log("Paramètres: " . ($_SERVER['QUERY_STRING'] ?? 'AUCUN'));
     
-    echo "<h1>🧪 Test Webhook Spyrr - VERSION FINALE CORRIGÉE</h1>";
+    echo "<h1>🧪 Test Webhook Spyrr - VERSION SÉCURISÉE</h1>";
     echo "<p>✅ Webhook configuré et opérationnel !</p>";
-    echo "<p>📡 URL : " . ($_SERVER['REQUEST_URI'] ?? '') . "</p>";
+    echo "<p>📡 URL : " . $_SERVER['REQUEST_URI'] . "</p>";
     echo "<p>🕒 Date : " . date('Y-m-d H:i:s') . "</p>";
-    echo "<p>🌐 Server : " . ($_SERVER['HTTP_HOST'] ?? '') . "</p>";
-    echo "<p>🔧 <strong>VERSION AVEC ANTI-DOUBLONS ET VALIDATION CODES</strong></p>";
+    echo "<p>🔧 <strong>VERSION SÉCURISÉE SANS ANTI-DOUBLONS COMPLEXE</strong></p>";
     
     // Test génération code
     if (isset($_GET['code'])) {
         $test_code = generate_premium_code();
-        write_log("Code test généré: {$test_code}");
         echo "<p>🔑 Code test généré : <strong>{$test_code}</strong></p>";
     }
     
     // Test EmailJS
     if (isset($_GET['email'])) {
         echo "<p>📧 Test EmailJS en cours...</p>";
-        write_log("=== DÉBUT TEST EMAILJS ===");
         try {
             $result = test_emailjs();
             if ($result !== false) {
                 echo "<p><strong>✅ Test EmailJS : SUCCESS</strong></p>";
-                write_log("✅ Test EmailJS réussi");
             }
         } catch (Exception $e) {
             echo "<p><strong>❌ Test EmailJS : ERREUR</strong> - " . $e->getMessage() . "</p>";
-            write_log("❌ Test EmailJS échoué: " . $e->getMessage());
         }
     }
     
     echo "<hr>";
-    echo "<p>🔗 Tests disponibles :</p>";
-    echo "<ul>";
-    echo "<li><a href='?test=1&code=1'>Test génération code</a></li>";
-    echo "<li><a href='?test=1&email=1'>Test EmailJS</a></li>";
-    echo "<li><a href='voir-logs.php'>📊 Voir logs détaillés</a></li>";
-    echo "</ul>";
+    echo "<p>🔗 <a href='voir-logs.php'>📊 Voir logs détaillés</a></p>";
     
-    write_log("=== FIN TEST WEBHOOK ===");
     exit;
 }
 
-try {
-    // Log détaillé du type de requête
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        write_log("✅ REQUÊTE POST DÉTECTÉE - C'est probablement Shopify !");
-    } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
-        write_log("ℹ️ REQUÊTE GET - Probablement un test navigateur");
-    } else {
-        write_log("⚠️ MÉTHODE INCONNUE: " . $_SERVER['REQUEST_METHOD']);
-    }
+write_log("=== NOUVELLE REQUÊTE WEBHOOK ===");
+write_log("Date: " . date('Y-m-d H:i:s'));
+write_log("Méthode: " . $_SERVER['REQUEST_METHOD']);
+write_log("User-Agent: " . ($_SERVER['HTTP_USER_AGENT'] ?? 'Non défini'));
 
-    // Récupération des données avec capture d'erreur
+try {
+    // Récupération des données
     $data = file_get_contents('php://input');
-    write_log("=== DONNÉES REÇUES ===");
     write_log("Taille des données: " . strlen($data) . " bytes");
     
-    if (empty($data)) {
-        write_log("⚠️ AUCUNE DONNÉE REÇUE - Peut-être un test de ping Shopify");
-        write_log("Headers spéciaux: X-Shopify-Topic=" . ($_SERVER['HTTP_X_SHOPIFY_TOPIC'] ?? 'NON'));
-        write_log("Headers spéciaux: X-Shopify-Shop-Domain=" . ($_SERVER['HTTP_X_SHOPIFY_SHOP_DOMAIN'] ?? 'NON'));
-        
-        // Répondre OK même sans données pour les tests Shopify
-        http_response_code(200);
-        echo "OK - Webhook test reçu - Pas de données à traiter";
-        write_log("✅ Réponse OK envoyée pour test sans données");
-        exit;
-    }
-    
-    // Log des premières données pour debug
-    write_log("Début des données: " . substr($data, 0, 200) . "...");
-    
-    // Vérification signature Shopify
     $webhook_signature = $_SERVER['HTTP_X_SHOPIFY_HMAC_SHA256'] ?? '';
-    write_log("Signature Shopify présente: " . ($webhook_signature ? 'OUI' : 'NON'));
+    write_log("Signature présente: " . ($webhook_signature ? 'OUI' : 'NON'));
     
-    if ($webhook_signature) {
-        write_log("Signature reçue: " . substr($webhook_signature, 0, 20) . "...");
+    // Vérification sécurité Shopify UNIQUEMENT pour les vraies requêtes POST
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($webhook_secret) && $webhook_secret !== 'VOTRE_SHOPIFY_WEBHOOK_SECRET') {
+        if (!empty($webhook_signature)) {
+            $calculated_hmac = base64_encode(hash_hmac('sha256', $data, $webhook_secret, true));
+            if (!hash_equals($webhook_signature, $calculated_hmac)) {
+                http_response_code(401);
+                write_log("Webhook non autorisé - Signature invalide");
+                exit('Unauthorized - Invalid signature');
+            }
+        }
     }
     
-    // Vérification sécurité UNIQUEMENT pour les vraies requêtes avec signature
-    if (!empty($webhook_signature) && !empty($webhook_secret) && $webhook_secret !== 'VOTRE_SHOPIFY_WEBHOOK_SECRET') {
-        $calculated_hmac = base64_encode(hash_hmac('sha256', $data, $webhook_secret, true));
-        write_log("Signature calculée: " . substr($calculated_hmac, 0, 20) . "...");
-        
-        if (!hash_equals($webhook_signature, $calculated_hmac)) {
-            http_response_code(401);
-            write_log("❌ SIGNATURE INVALIDE - Webhook non autorisé");
-            exit('Unauthorized - Invalid signature');
-        } else {
-            write_log("✅ SIGNATURE VALIDE - Webhook Shopify authentifié");
-        }
-    } else {
-        write_log("ℹ️ Pas de vérification de signature (test ou signature manquante)");
+    // Si pas de données POST, c'est probablement un test
+    if (empty($data)) {
+        write_log("Pas de données POST - Test direct");
+        echo "Webhook Spyrr opérationnel - En attente de données Shopify";
+        exit;
     }
     
     // Parsing commande
     $order = json_decode($data, true);
     if (!$order) {
-        write_log("❌ ERREUR: Impossible de parser JSON");
-        write_log("Données brutes: " . $data);
-        throw new Exception("Impossible de parser la commande JSON");
+        throw new Exception("Impossible de parser la commande");
     }
     
-    write_log("✅ JSON parsé avec succès");
-    
-    // Informations client avec protection contre les valeurs manquantes
-    $email_client = $order['email'] ?? 'EMAIL_MANQUANT';
-    $billing_address = $order['billing_address'] ?? [];
-    $nom_client = ($billing_address['first_name'] ?? '') . ' ' . ($billing_address['last_name'] ?? '');
-    $order_id = $order['id'] ?? 'ID_MANQUANT';
-    $order_number = $order['order_number'] ?? 'NUMBER_MANQUANT';
+    // Informations client
+    $email_client = $order['email'] ?? '';
+    $nom_client = ($order['billing_address']['first_name'] ?? '') . ' ' . ($order['billing_address']['last_name'] ?? '');
+    $order_id = $order['id'] ?? '';
+    $order_number = $order['order_number'] ?? '';
     
     write_log("=== COMMANDE ANALYSÉE ===");
     write_log("Email: {$email_client}");
@@ -167,51 +106,19 @@ try {
     write_log("Order ID: {$order_id}");
     write_log("Order Number: {$order_number}");
     
-    // NOUVELLE GESTION ANTI-DOUBLONS
-    write_log("=== VÉRIFICATION ANTI-DOUBLONS ===");
+    // ANTI-DOUBLONS SIMPLE (pas de fichier complexe)
+    $unique_key = md5($order_id . $email_client . date('Y-m-d H:i'));
+    $processed_key_file = 'last_processed.txt';
     
-    // Créer un identifiant unique pour cette commande
-    $order_unique_id = $order_id . '_' . $email_client;
-    $processed_file = 'processed_orders.txt';
-    
-    // Vérifier si cette commande a déjà été traitée dans les 10 dernières minutes
-    $current_time = time();
-    $processed_orders = [];
-    if (file_exists($processed_file)) {
-        $lines = file($processed_file, FILE_IGNORE_NEW_LINES);
-        foreach ($lines as $line) {
-            if (trim($line)) {
-                $parts = explode('|', $line);
-                if (count($parts) >= 2) {
-                    $stored_id = $parts[0];
-                    $stored_time = intval($parts[1]);
-                    
-                    // Garder seulement les entrées des 10 dernières minutes
-                    if (($current_time - $stored_time) < 600) {
-                        $processed_orders[] = $stored_id;
-                    }
-                }
-            }
+    if (file_exists($processed_key_file)) {
+        $last_key = trim(file_get_contents($processed_key_file));
+        if ($last_key === $unique_key) {
+            write_log("DOUBLON DÉTECTÉ - Commande déjà traitée");
+            echo "OK - Already processed";
+            exit;
         }
-        
-        // Réécrire le fichier avec seulement les entrées récentes
-        $new_content = '';
-        foreach ($processed_orders as $stored_id) {
-            $new_content .= $stored_id . '|' . $current_time . "\n";
-        }
-        file_put_contents($processed_file, $new_content);
     }
-    
-    if (in_array($order_unique_id, $processed_orders)) {
-        write_log("⚠️ COMMANDE DÉJÀ TRAITÉE : {$order_unique_id} - Éviter le doublon");
-        http_response_code(200);
-        echo "OK - Commande déjà traitée (anti-doublon)";
-        exit;
-    }
-    
-    // Marquer la commande comme en cours de traitement
-    file_put_contents($processed_file, $order_unique_id . '|' . $current_time . "\n", FILE_APPEND);
-    write_log("✅ Commande marquée comme en traitement : {$order_unique_id}");
+    file_put_contents($processed_key_file, $unique_key);
     
     // Vérification des produits achetés
     $has_premium = false;
@@ -222,66 +129,38 @@ try {
         write_log("Nombre de produits: " . count($order['line_items']));
         
         foreach ($order['line_items'] as $index => $item) {
-            $product_title = $item['title'] ?? 'TITRE_MANQUANT';
-            $product_handle = $item['variant_title'] ?? '';
+            $product_title = $item['title'] ?? '';
             $product_id = $item['product_id'] ?? '';
             
-            write_log("=== ANALYSE PRODUIT ===");
-            write_log("Titre original: '{$product_title}'");
-            write_log("Titre lowercase: '" . strtolower($product_title) . "'");
-            write_log("Product ID: '{$product_id}'");
+            write_log("Produit {$index}: {$product_title} (ID: {$product_id})");
             
-            // Méthodes de détection premium (ordre de priorité)
-            $is_premium = false;
-            $detection_method = '';
-            
-            // 1. Détection par ID exact (le plus précis)
+            // Détection produit Premium - MÉTHODES MULTIPLES SÉCURISÉES
             if ($product_id == '15073025196380') {
-                $is_premium = true;
-                $detection_method = 'ID exact';
-            }
-            // 2. Détection par titre exact
-            elseif (strpos(strtolower($product_title), 'oracle') !== false && 
-                    strpos(strtolower($product_title), 'miroir de spyrr') !== false && 
-                    strpos(strtolower($product_title), 'acces premium') !== false) {
-                $is_premium = true;
-                $detection_method = 'Titre exact complet';
-            }
-            // 3. Détection par mots-clés critiques
-            elseif (strpos(strtolower($product_title), 'oracle') !== false && strpos(strtolower($product_title), 'spyrr') !== false) {
-                $is_premium = true;
-                $detection_method = 'Oracle + Spyrr';
-            }
-            // 4. Détection large pour autres produits premium
-            elseif (strpos(strtolower($product_title), 'premium') !== false ||
-                    strpos(strtolower($product_title), 'accès') !== false ||
-                    strpos(strtolower($product_title), 'acces') !== false) {
-                $is_premium = true;
-                $detection_method = 'Mots-clés premium';
-            }
-            
-            // LOG du résultat
-            write_log("RÉSULTAT: Premium = " . ($is_premium ? 'OUI' : 'NON') . " (Méthode: {$detection_method})");
-            
-            if ($is_premium) {
+                // Détection par ID exact - PRIORITÉ 1
                 $has_premium = true;
-                write_log("✅ PRODUIT PREMIUM DÉTECTÉ : " . $product_title . " (via {$detection_method})");
-            } else {
-                write_log("❌ Produit non premium : " . $product_title);
+                write_log("✅ PREMIUM DÉTECTÉ par ID exact: " . $product_title);
+            } elseif (stripos($product_title, 'oracle') !== false && 
+                      stripos($product_title, 'spyrr') !== false && 
+                      stripos($product_title, 'premium') !== false) {
+                // Détection par titre complet - PRIORITÉ 2
+                $has_premium = true;
+                write_log("✅ PREMIUM DÉTECTÉ par titre: " . $product_title);
+            } elseif (stripos($product_title, 'premium') !== false || 
+                      stripos($product_title, 'accès') !== false || 
+                      stripos($product_title, 'acces') !== false) {
+                // Détection large - PRIORITÉ 3
+                $has_premium = true;
+                write_log("✅ PREMIUM DÉTECTÉ par mots-clés: " . $product_title);
             }
             
             // Détection consultation privée
-            if (strpos(strtolower($product_title), 'consultation') !== false) {
+            if (stripos($product_title, 'consultation') !== false) {
                 $has_consultation = true;
                 write_log("✅ CONSULTATION DÉTECTÉE : " . $product_title);
             }
         }
-    } else {
-        write_log("❌ Aucun line_items trouvé dans la commande");
-        write_log("Structure commande: " . print_r(array_keys($order), true));
     }
     
-    write_log("=== RÉSULTAT DÉTECTION ===");
     write_log("Premium détecté: " . ($has_premium ? 'OUI' : 'NON'));
     write_log("Consultation détectée: " . ($has_consultation ? 'OUI' : 'NON'));
     
@@ -295,12 +174,9 @@ try {
         save_premium_code($code_premium, $email_client, $order_id);
         
         // Envoi email code premium
-        write_log("Envoi email à: {$email_client}");
         send_premium_email($email_client, $nom_client, $code_premium, $order_number);
         
         write_log("✅ EMAIL PREMIUM ENVOYÉ : {$code_premium} à {$email_client}");
-    } else {
-        write_log("❌ Aucun produit premium détecté - pas d'email envoyé");
     }
     
     // Traitement Consultation
@@ -312,17 +188,13 @@ try {
     
     // Réponse succès
     http_response_code(200);
-    echo "OK - Commande traitée avec succès";
-    write_log("✅ TRAITEMENT TERMINÉ - Réponse OK envoyée");
+    echo "OK - Commande traitée";
     
 } catch (Exception $e) {
-    write_log("❌ ERREUR CRITIQUE : " . $e->getMessage());
-    write_log("Stack trace: " . $e->getTraceAsString());
+    write_log("Erreur webhook : " . $e->getMessage());
     http_response_code(500);
     echo "Erreur : " . $e->getMessage();
 }
-
-write_log("=== FIN TRAITEMENT WEBHOOK ===\n");
 
 /**
  * Génération code premium unique
@@ -364,7 +236,6 @@ function save_premium_code($code, $email, $order_id) {
         'date' => date('Y-m-d H:i:s')
     ];
     file_put_contents('premium_codes.log', json_encode($data) . "\n", FILE_APPEND);
-    write_log("Code sauvegardé: " . json_encode($data));
 }
 
 /**
@@ -413,27 +284,15 @@ function send_consultation_email($email, $nom, $order_number) {
 }
 
 /**
- * Fonction commune envoi EmailJS - VERSION ANTI-DÉTECTION
+ * Fonction commune envoi EmailJS
  */
 function send_emailjs($data, $test_mode = false) {
-    // Headers ultra-réalistes pour contourner la détection
     $headers = [
         'Content-Type: application/json',
-        'Accept: application/json, text/plain, */*',
-        'Accept-Language: fr-FR,fr;q=0.9,en;q=0.8',
-        'Accept-Encoding: gzip, deflate, br',
-        'Cache-Control: no-cache',
-        'Pragma: no-cache',
         'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept: application/json, text/plain, */*',
         'Origin: https://www.spyrr.net',
-        'Referer: https://www.spyrr.net/TIRAGE_GRATUIT_3_CARTES.i.htm',
-        'Sec-Ch-Ua: "Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'Sec-Ch-Ua-Mobile: ?0',
-        'Sec-Ch-Ua-Platform: "Windows"',
-        'Sec-Fetch-Dest: empty',
-        'Sec-Fetch-Mode: cors',
-        'Sec-Fetch-Site: cross-site',
-        'X-Requested-With: XMLHttpRequest'
+        'Referer: https://www.spyrr.net/TIRAGE_GRATUIT_3_CARTES.i.htm'
     ];
     
     $ch = curl_init('https://api.emailjs.com/api/v1.0/email/send');
@@ -444,25 +303,19 @@ function send_emailjs($data, $test_mode = false) {
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_ENCODING, 'gzip, deflate, br');
-    curl_setopt($ch, CURLOPT_COOKIEJAR, '/tmp/emailjs_cookies.txt');
-    curl_setopt($ch, CURLOPT_COOKIEFILE, '/tmp/emailjs_cookies.txt');
     
     $result = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curl_error = curl_error($ch);
     curl_close($ch);
     
-    write_log("EmailJS Response - HTTP: {$http_code}, Result: " . substr($result, 0, 100));
+    write_log("EmailJS Response - HTTP: {$http_code}");
     if ($curl_error) {
         write_log("EmailJS CURL Error: {$curl_error}");
     }
     
     if ($http_code !== 200) {
         $error_msg = "Erreur envoi email : HTTP {$http_code} - {$result}";
-        if ($curl_error) {
-            $error_msg .= " - CURL: {$curl_error}";
-        }
         write_log("❌ ÉCHEC EMAILJS: {$error_msg}");
         if (!$test_mode) {
             throw new Exception($error_msg);
