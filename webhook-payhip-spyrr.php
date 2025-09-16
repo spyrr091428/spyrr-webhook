@@ -1,6 +1,6 @@
 <?php
 // ===== CONFIGURATION =====
-define('PAYHIP_WEBHOOK_TOKEN', 'TON_TOKEN_SECRET'); // Remplace par ton token
+define('PAYHIP_WEBHOOK_TOKEN', 'ubaivahk2P*'); // Remplace par ton token
 define('EMAILJS_SERVICE_ID', 'service_7bfwpfm');
 define('EMAILJS_TEMPLATE_ID', 'template_4lesgvh');
 define('EMAILJS_PUBLIC_KEY', 'RRvc1ifIrhay8-fVV');
