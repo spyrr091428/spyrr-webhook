@@ -1,195 +1,131 @@
 <?php
 /**
- * PAGE D'ACCUEIL WEBHOOK SPYRR - VERSION CORRIGÉE
- * Fichier : index.php
+ * INDEX.PHP - MIROIR DE SPYRR
+ * Gère les webhooks Payhip et les requêtes normales.
+ * Ludovic Spyrr - 2024
  */
 
-$server_time = date('Y-m-d H:i:s');
-$server_info = $_SERVER['HTTP_HOST'] ?? 'localhost';
-$php_version = phpversion();
+// =============================================
+// 1. CHARGER LES VARIABLES D'ENVIRONNEMENT (CLÉS SECRÈTES)
+// =============================================
+require __DIR__ . '/vendor/autoload.php'; // Charge les outils (composer)
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load(); // Charge les variables du .env (ou de Render)
+
+// =============================================
+// 2. GESTION DU WEBHOOK PAYHIP (POUR LES PAIEMENTS)
+// =============================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['HTTP_X_PAYHIP_SIGNATURE'])) {
+    // Vérifier le token du webhook (sécurité)
+    $webhookToken = $_ENV['PAYHIP_WEBHOOK_TOKEN'] ?? '';
+    $receivedToken = $_SERVER['HTTP_X_PAYHIP_SIGNATURE'] ?? '';
+
+    if ($receivedToken !== $webhookToken) {
+        http_response_code(403);
+        die('❌ Accès refusé : Token invalide.');
+    }
+
+    // Lire les données du paiement
+    $json = file_get_contents('php://input');
+    $data = json_decode($json, true);
+
+    if (!$data) {
+        http_response_code(400);
+        die('❌ Données invalides.');
+    }
+
+    // ====== TRAITEMENT DES ÉVÉNEMENTS PAYHIP ======
+    $event = $data['event'] ?? '';
+    $orderId = $data['order']['id'] ?? '';
+    $emailClient = $data['order']['email'] ?? '';
+    $productName = $data['order']['products'][0]['name'] ?? '';
+
+    // Exemple : Envoi d'un email via EmailJS si paiement réussi
+    if ($event === 'subscription:activated' || $event === 'payment:confirmed') {
+        // Générer un code premium aléatoire (ex: SPYRR-XXXX-XXXX)
+        $codePremium = 'SPYRR-' . strtoupper(bin2hex(random_bytes(4))) . '-' . strtoupper(bin2hex(random_bytes(2)));
+
+        // Enregistrer le code dans un fichier (ou une base de données plus tard)
+        file_put_contents(__DIR__ . '/premium_codes.txt', "$emailClient,$codePremium,$productName\n", FILE_APPEND);
+
+        // ====== ENVOI DE L'EMAIL VIA EMAILJS ======
+        $serviceId = $_ENV['EMAILJS_SERVICE_ID'];
+        $templateId = $_ENV['EMAILJS_TEMPLATE_ID'];
+        $publicKey = $_ENV['EMAILJS_PUBLIC_KEY'];
+
+        $emailData = [
+            'service_id' => $serviceId,
+            'template_id' => $templateId,
+            'user_id' => $publicKey,
+            'template_params' => [
+                'to_email' => $emailClient,
+                'code_premium' => $codePremium,
+                'product_name' => $productName,
+                'message' => "Merci d'avoir rejoint l'univers Spyrr ! Voici ton code premium : **$codePremium**\n\nVibre libre, ami(e)."
+            ]
+        ];
+
+        // Envoyer la requête à EmailJS
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, "https://api.emailjs.com/api/v1.0/email/send");
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($emailData));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Origin: https://spyrr.net'
+        ]);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        // Log pour débogage
+        file_put_contents(__DIR__ . '/webhook_debug.log', date('Y-m-d H:i:s') . " - Email envoyé à $emailClient (Code: $codePremium)\n", FILE_APPEND);
+    }
+
+    // Répondre à Payhip (obligatoire)
+    http_response_code(200);
+    die('✅ Webhook reçu avec succès.');
+}
+
+// =============================================
+// 3. PAGE NORMALE (SI CE N'EST PAS UN WEBHOOK)
+// =============================================
 ?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webhook Spyrr - Interface de Gestion</title>
+    <title>Miroir de Spyrr - Univers Vibratoire</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            background: #223A6D;
-            color: #FFFFFF;
-            margin: 0;
-            padding: 20px;
+            font-family: 'Arial', sans-serif;
+            background-color: #f0e6ff;
+            color: #333;
+            text-align: center;
+            padding: 50px;
+        }
+        h1 {
+            color: #8a2be2;
+            font-size: 2.5em;
         }
         .container {
-            max-width: 1000px;
+            max-width: 800px;
             margin: 0 auto;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: rgba(255, 255, 255, 0.1);
+            background: white;
+            padding: 30px;
             border-radius: 10px;
-        }
-        .header h1 {
-            font-size: 2rem;
-            margin-bottom: 10px;
-            color: #FFD700;
-        }
-        .tools-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .tool-card {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            border: 2px solid rgba(255, 255, 255, 0.2);
-        }
-        .tool-card h3 {
-            color: #FFD700;
-            margin-bottom: 10px;
-        }
-        .btn {
-            background: #FFD700;
-            color: #223A6D;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            font-weight: bold;
-            text-decoration: none;
-            display: inline-block;
-            margin: 5px;
-        }
-        .btn:hover {
-            background: #F5C842;
-        }
-        .btn-success {
-            background: #28a745;
-            color: white;
-        }
-        .btn-info {
-            background: #17a2b8;
-            color: white;
-        }
-        .status-card {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-        .status-card h3 {
-            color: #FFD700;
-            margin-bottom: 15px;
-        }
-        .status-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-        }
-        .status-value {
-            font-weight: bold;
-            color: #28a745;
-        }
-        .webhook-url {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 15px;
-            border-radius: 5px;
-            font-family: monospace;
-            word-break: break-all;
-            margin: 10px 0;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🔗 Webhook Spyrr</h1>
-            <p>Interface de gestion pour Le Miroir de Spyrr</p>
-            <p><strong>✅ Service opérationnel sur render.com</strong></p>
-        </div>
-
-        <div class="status-card">
-            <h3>📊 Statut du Serveur</h3>
-            <div class="status-item">
-                <span>Heure serveur :</span>
-                <span class="status-value"><?php echo $server_time; ?></span>
-            </div>
-            <div class="status-item">
-                <span>Host :</span>
-                <span class="status-value"><?php echo $server_info; ?></span>
-            </div>
-            <div class="status-item">
-                <span>PHP Version :</span>
-                <span class="status-value"><?php echo $php_version; ?></span>
-            </div>
-        </div>
-
-        <h2 style="color: #FFD700; text-align: center; margin-bottom: 20px;">🧰 Outils Disponibles</h2>
-        
-        <div class="tools-grid">
-            <div class="tool-card">
-                <h3>🧪 Test Webhook</h3>
-                <p>Teste le webhook principal avec génération de code premium</p>
-                <a href="webhook-shopify-spyrr.php?test=1" class="btn btn-success">Lancer le test</a>
-            </div>
-
-            <div class="tool-card">
-                <h3>📊 Voir les Logs</h3>
-                <p>Consultez les logs détaillés des webhooks</p>
-                <a href="voir-logs.php" class="btn btn-info">Voir les logs</a>
-            </div>
-
-            <div class="tool-card">
-                <h3>📦 Test Commande</h3>
-                <p>Simule une commande Shopify complète</p>
-                <a href="test-commande-manuelle.php" class="btn">Test complet</a>
-            </div>
-
-            <div class="tool-card">
-                <h3>🔑 Générateur de Code</h3>
-                <p>Teste la génération de codes premium</p>
-                <a href="webhook-shopify-spyrr.php?test=1&code=1" class="btn">Générer code</a>
-            </div>
-
-            <div class="tool-card">
-                <h3>📧 Test EmailJS</h3>
-                <p>Vérifie l'envoi d'emails via EmailJS</p>
-                <a href="webhook-shopify-spyrr.php?test=1&email=1" class="btn">Test email</a>
-            </div>
-
-            <div class="tool-card">
-                <h3>🗑️ Nettoyer Logs</h3>
-                <p>Vide tous les fichiers de logs</p>
-                <a href="voir-logs.php?clear=1" class="btn" onclick="return confirm('Vider tous les logs ?')">Nettoyer</a>
-            </div>
-        </div>
-
-        <div class="status-card">
-            <h3>📡 Configuration Webhook Shopify</h3>
-            <p><strong>URL à configurer dans Shopify :</strong></p>
-            <div class="webhook-url">
-                https://spyrr-webhook.onrender.com/webhook-shopify-spyrr.php
-            </div>
-            
-            <h3 style="margin-top: 20px;">🔧 Fonctionnalités</h3>
-            <ul>
-                <li>✅ Réception automatique des commandes Shopify</li>
-                <li>✅ Génération de codes premium uniques</li>
-                <li>✅ Envoi d'emails automatique via EmailJS</li>
-                <li>✅ Logs détaillés pour le debug</li>
-                <li>✅ Tests complets pour vérification</li>
-            </ul>
-
-            <h3 style="margin-top: 20px;">📞 Contact</h3>
-            <p><strong>Email :</strong> spyrr@proton.me</p>
-            <p><strong>Site :</strong> <a href="https://www.spyrr.net" style="color: #FFD700;">www.spyrr.net</a></p>
-        </div>
+        <h1>🌟 Bienvenue dans l'Univers Spyrr 🌟</h1>
+        <p>Ton code premium t'a été envoyé par email après ton paiement.</p>
+        <p>Si tu n'as pas reçu ton code, contacte-nous à : <a href="mailto:contact@spyrr.net">contact@spyrr.net</a></p>
+        <hr>
+        <p><small>© <?php echo date('Y'); ?> Ludovic Spyrr - Vibre Libre.</small></p>
     </div>
 </body>
 </html>
