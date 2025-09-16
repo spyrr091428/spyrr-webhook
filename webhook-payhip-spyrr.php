@@ -1,63 +1,96 @@
 <?php
 // ===== CONFIGURATION =====
-define('PAYHIP_WEBHOOK_TOKEN', 'ubaivahk2P*'); // Ton token (à protéger !)
+define('PAYHIP_WEBHOOK_TOKEN', 'ubaivahk2P*');
 define('EMAILJS_SERVICE_ID', 'service_7bfwpfm');
 define('EMAILJS_TEMPLATE_ID', 'template_4lesgvh');
 define('EMAILJS_PUBLIC_KEY', 'RRvc1ifIrhay8-fVV');
 define('LOG_FILE', 'payhip_webhook.log');
 
-// ===== FONCTIONS UTILES =====
+// ===== FONCTIONS =====
 function logMessage($message) {
-    $timestamp = date('Y-m-d H:i:s');
-    $log = "[$timestamp] $message" . PHP_EOL;
-    file_put_contents(LOG_FILE, $log, FILE_APPEND);
-    error_log($log);
+    file_put_contents(LOG_FILE, "[" . date('Y-m-d H:i:s') . "] $message" . PHP_EOL, FILE_APPEND);
 }
 
-// ===== SÉCURITÉ : Vérification du token =====
-$received_token = $_GET['token'] ?? '';
-logMessage("Token reçu : '" . $received_token . "'");
-logMessage("Token attendu : '" . PAYHIP_WEBHOOK_TOKEN . "'");
+function generatePremiumCode() {
+    return 'SPYRR' . date('Y') . '_' . strtoupper(substr(md5(uniqid()), 0, 8));
+}
 
-if ($received_token !== PAYHIP_WEBHOOK_TOKEN) {
-    logMessage("ERREUR : Token invalide ou manquant.");
+function sendPremiumCodeEmail($to_email, $premium_code) {
+    $url = "https://api.emailjs.com/api/v1.0/email/send";
+    $data = [
+        'service_id' => EMAILJS_SERVICE_ID,
+        'template_id' => EMAILJS_TEMPLATE_ID,
+        'user_id' => EMAILJS_PUBLIC_KEY,
+        'template_params' => [
+            'to_email' => $to_email,
+            'premium_code' => $premium_code,
+            'buyer_name' => 'Ami(e) des Étoiles'
+        ]
+    ];
+
+    $options = [
+        'http' => [
+            'header' => "Content-type: application/json\r\n",
+            'method' => 'POST',
+            'content' => json_encode($data),
+        ],
+    ];
+
+    $context = stream_context_create($options);
+    $response = @file_get_contents($url, false, $context);
+
+    if ($response === FALSE) {
+        $error = error_get_last();
+        logMessage("ERREUR EmailJS : " . $error['message']);
+        return false;
+    }
+
+    logMessage("Réponse EmailJS : $response");
+    return $response;
+}
+
+// ===== VÉRIFICATION DU TOKEN =====
+if ($_GET['token'] !== PAYHIP_WEBHOOK_TOKEN) {
+    logMessage("ERREUR : Token invalide.");
     http_response_code(401);
     exit('Accès non autorisé');
 }
 
-// ===== TRAITEMENT DU WEBHOOK =====
-logMessage("Token valide. Traitement de la requête...");
-
-// Récupérer les données POST (pour Payhip)
+// ===== LECTURE DU JSON =====
 $json = file_get_contents('php://input');
-$data = json_decode($json, true);
+logMessage("JSON reçu : " . ($json ?: 'vide'));
 
+$data = json_decode($json, true);
 if ($data === null) {
-    logMessage("Aucune donnée JSON valide reçue.");
+    logMessage("ERREUR JSON : " . json_last_error_msg());
     http_response_code(400);
     exit('Données JSON invalides');
 }
 
-logMessage("Données reçues : " . print_r($data, true));
-
-// ===== GÉNÉRATION DU CODE PREMIUM =====
-function generatePremiumCode() {
-    $prefix = 'SPYRR' . date('Y');
-    $random = strtoupper(substr(md5(uniqid()), 0, 8));
-    return $prefix . '_' . $random;
+// ===== VALIDATION DES DONNÉES =====
+if (empty($data['data']['order']['buyer_email'])) {
+    logMessage("ERREUR : Email acheteur manquant.");
+    http_response_code(400);
+    exit('Email acheteur requis');
 }
 
+$buyer_email = $data['data']['order']['buyer_email'];
 $premium_code = generatePremiumCode();
-$buyer_email = $data['data']['order']['buyer_email'] ?? 'inconnu@test.com';
+logMessage("Code généré : $premium_code pour $buyer_email");
 
-logMessage("Code premium généré : $premium_code pour $buyer_email");
+// ===== ENVOI DE L'EMAIL =====
+$email_sent = sendPremiumCodeEmail($buyer_email, $premium_code);
+if ($email_sent === false) {
+    logMessage("ÉCHEC : Email non envoyé à $buyer_email.");
+    http_response_code(500);
+    exit('Erreur lors de l’envoi de l’email');
+}
 
-// ===== ENVOI DE L'EMAIL (EXEMPLE AVEC EMAILJS) =====
-// (À adapter selon ta configuration EmailJS)
-logMessage("Envoi de l'email à $buyer_email avec le code $premium_code...");
-// Ici, tu appellerais l'API EmailJS avec $buyer_email et $premium_code
-
-// ===== RÉPONSE AU CLIENT =====
+// ===== RÉPONSE =====
 http_response_code(200);
-echo "Webhook Payhip traité avec succès. Code premium : $premium_code";
+echo json_encode([
+    'status' => 'success',
+    'premium_code' => $premium_code,
+    'email' => $buyer_email,
+]);
 ?>
