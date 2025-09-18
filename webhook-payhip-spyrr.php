@@ -1,4 +1,18 @@
 <?php
+// Debug de TOUT ce qui arrive
+$debug_full = [
+    'method' => $_SERVER['REQUEST_METHOD'],
+    'headers' => getallheaders(),
+    'get_data' => $_GET,
+    'post_data' => $_POST,
+    'raw_input' => file_get_contents('php://input'),
+    'content_type' => $_SERVER['CONTENT_TYPE'] ?? 'unknown'
+];
+file_put_contents('full_webhook_debug.log', 
+    "=== WEBHOOK CALL " . date('Y-m-d H:i:s') . " ===\n" .
+    print_r($debug_full, true) . "\n\n", 
+    FILE_APPEND
+);
 // ===== CONFIGURATION =====
 define('PAYHIP_WEBHOOK_TOKEN', 'RDubp'); // Remplace par ton token
 define('EMAILJS_SERVICE_ID', 'service_7bfwpfm');
@@ -103,3 +117,4 @@ function logMessage($message) {
     $log_entry = '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL;
     file_put_contents(LOG_FILE, $log_entry, FILE_APPEND);
 }
+
