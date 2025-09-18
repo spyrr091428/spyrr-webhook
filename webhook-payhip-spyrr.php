@@ -1,6 +1,6 @@
 <?php
 // ===== CONFIGURATION =====
-define('PAYHIP_WEBHOOK_TOKEN', 'RDubp'); // Ton token (à protéger !)
+define('PAYHIP_WEBHOOK_TOKEN', 'ubaivahk2P*'); // Ton token (à protéger !)
 define('EMAILJS_SERVICE_ID', 'service_7bfwpfm');
 define('EMAILJS_TEMPLATE_ID', 'template_4lesgvh');
 define('EMAILJS_PUBLIC_KEY', 'RRvc1ifIrhay8-fVV');
@@ -61,3 +61,4 @@ logMessage("Envoi de l'email à $buyer_email avec le code $premium_code...");
 http_response_code(200);
 echo "Webhook Payhip traité avec succès. Code premium : $premium_code";
 ?>
+
