@@ -1,139 +1,51 @@
 <?php
-file_put_contents('all_requests.log', date('Y-m-d H:i:s') . ' - Method: ' . $_SERVER['REQUEST_METHOD'] . ' - Data: ' . file_get_contents('php://input') . PHP_EOL, FILE_APPEND);/**
- * WEBHOOK PAYHIP POUR L'ORACLE "LE MIROIR DE SPYRR"
- * Gère les achats du produit "Accès Premium" et envoie un code par email.
- * Ludovic Spyrr - 2024
- */
+// webhook-payhip-spyrr.php
+// Reçoit les notifications de Payhip et envoie un code premium
 
-// =============================================
-// 1. CONFIGURATION (À PERSONNALISER)
-// =============================================
-$valid_product_id = "RDubp"; // ID de ton produit Payhip (à confirmer)
-$expected_price = 12.00;    // Prix en euros (pour éviter les codes via des promos non autorisées)
-$emailjs_service_id = 'service_7bfwpfm'; // Ton Service ID EmailJS
-$emailjs_template_id = 'template_4lesgvh'; // Ton Template ID pour les codes premium
-$emailjs_user_id = 'RRvc1ifIrhay8-fVV';    // Ta clé publique EmailJS
-
-// =============================================
-// 2. RÉCUPÉRATION ET VÉRIFICATION DES DONNÉES
-// =============================================
-// Récupère le payload du webhook
+// 1. Récupération des données Payhip (format différent de Shopify)
 $data = json_decode(file_get_contents('php://input'), true);
-file_put_contents('webhook_debug.log', print_r($data, true) . PHP_EOL, FILE_APPEND); // Log brut pour debug
 
-// Vérifie que c'est une requête POST valide
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    die("Méthode non autorisée.");
-}
+// 2. Vérification du produit acheté
+if (isset($data['product']) && $data['product']['name'] === "Code Premium – Oracle Le Miroir de Spyrr (12 mois)") {
+    $customer_email = $data['buyer']['email'];
+    $customer_name = $data['buyer']['first_name'];
 
-// Vérifie la présence des données minimales
-if (!isset($data['product_id']) || !isset($data['buyer_email']) || !isset($data['total'])) {
+    // 3. Génération du code (même fonction que pour Shopify)
+    $premium_code = generatePremiumCode();
+
+    // 4. Envoi de l'email (même fonction que pour Shopify)
+    sendEmailViaEmailJS($customer_email, $premium_code, $customer_name);
+
+    // 5. Log pour debug
+    error_log("Payhip Webhook - Code envoyé à : $customer_email | Code : $premium_code");
+} else {
+    error_log("Payhip Webhook - Produit non éligible : " . $data['product']['name']);
     http_response_code(400);
-    die("Données manquantes.");
+    exit('Produit non éligible');
 }
 
-// =============================================
-// 3. FILTRES DE SÉCURITÉ
-// =============================================
-// Vérifie que c'est le bon produit
-if ($data['product_id'] !== $valid_product_id) {
-    error_log("⚠️ Produit non éligible. ID reçu: " . $data['product_id']);
-    http_response_code(403);
-    die("Produit non reconnu.");
+// --- Fonctions partagées (à extraire dans un fichier commun si possible) ---
+function generatePremiumCode() {
+    $chars = 'ABCDEF0123456789';
+    $code = 'SPYRR2025_';
+    for ($i = 0; $i < 8; $i++) {
+        $code .= $chars[rand(0, strlen($chars) - 1)];
+    }
+    return $code;
 }
 
-// Vérifie que le paiement est complet
-if ($data['status'] !== 'completed') {
-    error_log("⚠️ Paiement non finalisé. Statut: " . $data['status']);
-    http_response_code(400);
-    die("Paiement non validé.");
+function sendEmailViaEmailJS($to_email, $premium_code, $customer_name) {
+    // Initialisation d'EmailJS (à adapter selon ta librairie)
+    $emailJS = new \EmailJS\EmailJS('RRvc1ifIrhay8-fVV');
+
+    $emailJS->send(
+        'service_7bfwpfm',
+        'template_4lesgvh',
+        [
+            'to_email' => $to_email,
+            'premium_code' => $premium_code,
+            'customer_name' => $customer_name
+        ]
+    );
 }
-
-// Vérifie le montant (évite les codes générés via des promos à 1€)
-if ((float)$data['total'] < $expected_price) {
-    error_log("⚠️ Montant insuffisant. Reçu: " . $data['total'] . "€");
-    http_response_code(400);
-    die("Montant insuffisant pour un accès premium.");
-}
-
-// =============================================
-// 4. GÉNÉRATION DU CODE PREMIUM
-// =============================================
-function generate_premium_code($email) {
-    $year = date('Y');
-    $random = strtoupper(substr(md5(uniqid($email, true)), 0, 8));
-    return "SPYRR{$year}_{$random}";
-}
-
-$email = $data['buyer_email'];
-$code = generate_premium_code($email);
-$expiry_date = date('Y-m-d', strtotime('+12 months'));
-
-// =============================================
-// 5. ENREGISTREMENT DANS LES LOGS
-// =============================================
-$log_line = sprintf(
-    "%s | %s | Code: %s | Expire: %s | Produit: %s | Montant: %s€",
-    date('Y-m-d H:i:s'),
-    $email,
-    $code,
-    $expiry_date,
-    $data['product_id'],
-    $data['total']
-);
-file_put_contents('premium_codes.log', $log_line . PHP_EOL, FILE_APPEND);
-
-// =============================================
-// 6. ENVOI DE L'EMAIL VIA EMAILJS
-// =============================================
-function send_premium_code_email($email, $code, $expiry_date) {
-    global $emailjs_service_id, $emailjs_template_id, $emailjs_user_id;
-
-    $template_params = [
-        'user_email' => $email,
-        'premium_code' => $code,
-        'expiry_date' => $expiry_date,
-        'oracle_name' => "Le Miroir de Spyrr"
-    ];
-
-    $url = "https://api.emailjs.com/api/v1.0/email/send";
-    $headers = [
-        'Content-Type: application/json',
-        'Origin: http://spyrrgames.net'
-    ];
-    $payload = json_encode([
-        'service_id' => $emailjs_service_id,
-        'template_id' => $emailjs_template_id,
-        'user_id' => $emailjs_user_id,
-        'template_params' => $template_params
-    ]);
-
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    $response = curl_exec($ch);
-    curl_close($ch);
-
-    file_put_contents('emailjs_debug.log', "Email envoyé à $email. Réponse: $response" . PHP_EOL, FILE_APPEND);
-    return $response;
-}
-
-// Envoie l'email
-$email_response = send_premium_code_email($email, $code, $expiry_date);
-
-// =============================================
-// 7. RÉPONSE FINALE AU WEBHOOK
-// =============================================
-http_response_code(200);
-echo json_encode([
-    'status' => 'success',
-    'message' => 'Code premium généré et envoyé.',
-    'email' => $email,
-    'code' => $code,
-    'emailjs_response' => $email_response
-]);
 ?>
-
