@@ -2,7 +2,7 @@
 // ========== 1. VÉRIFICATION DE LA SIGNATURE (POINT 4) ==========
 $payhipSignature = $_SERVER['HTTP_X_PAYHIP_SIGNATURE'] ?? '';
 $payload = file_get_contents('php://input');
-$apiKey = 'c183495666740265b7f24d80d742eb73c43ce942'; // Remplace par ta clé (Payhip → Settings → Developer)
+$apiKey = 'whsec_c183495666740265b7f24d80d742eb73c43ce942'; // Remplace par ta clé (Payhip → Settings → Developer)
 $expectedSignature = hash('sha256', $payload . $apiKey);
 
 if ($payhipSignature !== $expectedSignature) {
@@ -52,3 +52,4 @@ if (!mail($to, $subject, $message, $headers)) {
 http_response_code(200);
 echo "✅ Webhook traité. Code envoyé à " . $data['email'];
 ?>
+
