@@ -2,7 +2,7 @@
 // ========== 1. VÉRIFICATION DE LA SIGNATURE (POINT 4) ==========
 $payhipSignature = $_SERVER['HTTP_X_PAYHIP_SIGNATURE'] ?? '';
 $payload = file_get_contents('php://input');
-$apiKey = 'TA_CLÉ_API_PAYHIP'; // Remplace par ta clé (Payhip → Settings → Developer)
+$apiKey = 'c183495666740265b7f24d80d742eb73c43ce942'; // Remplace par ta clé (Payhip → Settings → Developer)
 $expectedSignature = hash('sha256', $payload . $apiKey);
 
 if ($payhipSignature !== $expectedSignature) {
@@ -18,7 +18,7 @@ if (!$data || $data['type'] !== 'paid') {
 }
 
 // Vérifie que c'est bien ton produit
-$validProductIds = ['TON_ID_PRODUIT']; // Ex: "2804256" (à trouver dans Payhip)
+$validProductIds = ['RDubp']; // Ex: "2804256" (à trouver dans Payhip)
 $isValidProduct = false;
 foreach ($data['items'] as $item) {
     if (in_array($item['product_id'], $validProductIds)) {
@@ -52,3 +52,4 @@ if (!mail($to, $subject, $message, $headers)) {
 http_response_code(200);
 echo "✅ Webhook traité. Code envoyé à " . $data['email'];
 ?>
+
