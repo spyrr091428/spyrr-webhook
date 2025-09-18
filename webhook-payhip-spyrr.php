@@ -1,5 +1,5 @@
 <?php
-/**
+file_put_contents('all_requests.log', date('Y-m-d H:i:s') . ' - Method: ' . $_SERVER['REQUEST_METHOD'] . ' - Data: ' . file_get_contents('php://input') . PHP_EOL, FILE_APPEND);/**
  * WEBHOOK PAYHIP POUR L'ORACLE "LE MIROIR DE SPYRR"
  * Gère les achats du produit "Accès Premium" et envoie un code par email.
  * Ludovic Spyrr - 2024
@@ -136,3 +136,4 @@ echo json_encode([
     'emailjs_response' => $email_response
 ]);
 ?>
+
