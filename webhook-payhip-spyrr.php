@@ -6,7 +6,7 @@
  */
 
 // ========== 1. CONFIGURATION (À PERSONNALISER) ==========
-$apiKey          = 'whsec_c183495666740265b7f24d80d742eb73c43ce942'; // <--- Ta clé Payhip (déjà modifiée)
+$apiKey          = 'whsec_2c862227efd5165894ab03453940e5a672f15253'; // <--- Ta clé Payhip (déjà modifiée)
 $validProductIds = ['RDubp']; // <--- ID de ton produit (vérifie dans l'URL Payhip)
 $emailJSConfig   = [
     'service_id'  => 'service_7bfwpfm',    // <--- Ton Service ID EmailJS
@@ -176,4 +176,5 @@ echo json_encode([
     "code"    => $code // <--- À masquer en production pour la sécurité
 ]);
 ?>
+
 
