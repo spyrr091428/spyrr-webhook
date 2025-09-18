@@ -52,4 +52,3 @@ if (!mail($to, $subject, $message, $headers)) {
 http_response_code(200);
 echo "✅ Webhook traité. Code envoyé à " . $data['email'];
 ?>
-
